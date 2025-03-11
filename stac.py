@@ -11,7 +11,7 @@ import fire
 def run_benchmark(dataset_url: str, label_percentage: float=0.1):
     model_name = 'yolov8n'
     train_params = dict(
-    epochs=5,
+    epochs=100,
     batch=16,
     )
 
