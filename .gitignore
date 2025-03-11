@@ -1,0 +1,15 @@
+*.pt
+*.json
+*.jpg
+*.jpeg
+*.png
+**/test/**
+**/train/**
+**/valid/**
+**/images/**
+**/labels/**
+*.csv
+*.yaml
+**/README.roboflow.txt
+**/README.dataset.txt
+
