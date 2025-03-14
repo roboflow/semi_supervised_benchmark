@@ -11,8 +11,8 @@ import fire
 def run_benchmark(dataset_url: str, label_percentage: float=0.1):
     model_name = 'yolov8n'
     train_params = dict(
-    epochs=100,
-    batch=16,
+        epochs=300,
+        batch=16,
     )
 
     # example url:
@@ -44,7 +44,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1):
     semi_supervised_dataset_dir = os.path.join(base_dir, "semi_supervised_dataset")
 
     print("Running fully supervised baseline...")
-    model = YOLO(f"{model_name}.yaml")
+    model = YOLO(f"{model_name}.pt")
     model.train(
         data=fully_supervised_dataset_yaml,
         project=experiment_name,
@@ -75,7 +75,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1):
             os.remove(labels_file)
 
     print("Training teacher model...")
-    model = YOLO(f"{model_name}.yaml")
+    model = YOLO(f"{model_name}.pt")
 
     # train the teacher model on the labeled dataset
     model.train(
@@ -139,7 +139,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1):
     shutil.copy2(labeled_dataset_yaml, os.path.join(semi_supervised_dataset_dir, "data.yaml"))
 
     print("Training student model...")
-    model = YOLO(f"{model_name}.yaml")
+    model = YOLO(f"{model_name}.pt")
 
     # note that ultralytics train has lots of augmentations by default, so we don't need to actively add any to mimic STAC
     model.train(

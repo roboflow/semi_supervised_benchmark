@@ -54,7 +54,7 @@ def collect_results_jsons(base_dir, output_file):
         base_dir (str): The directory whose immediate subdirectories will be checked.
         output_file (str): The file path to write the aggregated JSON list.
     """
-    aggregated_results = []
+    aggregated_results = {}
 
     # List entries in base_dir and process only directories.
     for entry in os.listdir(base_dir):
@@ -65,7 +65,7 @@ def collect_results_jsons(base_dir, output_file):
                 try:
                     with open(json_file, "r") as f:
                         data = json.load(f)
-                        aggregated_results.append(data)
+                        aggregated_results[entry] = data
                     print(f"Collected JSON from: {json_file}")
                 except json.JSONDecodeError as e:
                     print(f"Error decoding JSON in {json_file}: {e}")
@@ -109,6 +109,7 @@ def main(script, url_file, suppress_output=False, output_file=None):
     # Load dataset URLs from the file (ignoring empty lines).
     with open(url_file, "r") as f:
         dataset_urls = [line.strip() for line in f if line.strip()]
+        dataset_urls = [url[:-1] if url.endswith('/') else url for url in dataset_urls]
     
     # Dictionary to track active processes per GPU.
     processes = {gpu: None for gpu in gpu_ids}
