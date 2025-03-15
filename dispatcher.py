@@ -19,7 +19,7 @@ def get_all_gpus():
     return gpu_ids
 
 
-def run_job(script_path, dataset_url, gpu_id, suppress_output=False):
+def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False):
     """
     Runs the training script with the given dataset URL on the specified GPU.
     The GPU is set via the CUDA_VISIBLE_DEVICES environment variable.
@@ -36,7 +36,7 @@ def run_job(script_path, dataset_url, gpu_id, suppress_output=False):
     print(f"[GPU {gpu_id}] Running {script_path} with URL: {dataset_url}")
     if suppress_output:
         subprocess.run(
-            ["python", script_path, dataset_url],
+            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun)],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
@@ -81,7 +81,7 @@ def collect_results_jsons(base_dir, output_file):
         print(f"Error writing to {output_file}: {e}")
 
 
-def main(script, url_file, suppress_output=False, output_file=None):
+def main(script, url_file, suppress_output=False, output_file=None, force_rerun=False):
     """
     Manages GPU training jobs.
     
@@ -89,6 +89,8 @@ def main(script, url_file, suppress_output=False, output_file=None):
         script (str): Path to the training script to run.
         url_file (str): File path containing dataset URLs (one per line).
         suppress_output (bool): If True, suppress output from the training scripts.
+        output_file (str): File path to save aggregated results.
+        force_rerun (bool): If True, rerun the script even if results.json already exists.
     """
     if suppress_output:
         print("Suppressing output")
@@ -128,7 +130,7 @@ def main(script, url_file, suppress_output=False, output_file=None):
                 url = dataset_urls.pop(0)
                 new_proc = multiprocessing.Process(
                     target=run_job,
-                    args=(script, url, gpu, suppress_output)
+                    args=(script, url, gpu, suppress_output, force_rerun)
                 )
                 new_proc.start()
                 processes[gpu] = new_proc

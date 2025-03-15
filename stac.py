@@ -8,7 +8,7 @@ random.seed(37)
 import fire
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1):
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False):
     model_name = 'yolov8n'
     train_params = dict(
         epochs=300,
@@ -24,6 +24,12 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1):
 
     experiment_name = f"{labeled_dataset.name}v{labeled_dataset.version}-{model_name}-stac-semi-{label_percentage}"
     base_dir = os.path.join(os.path.dirname(__file__), experiment_name)
+
+    results_json_path = os.path.join(base_dir, "results.json")
+    if os.path.exists(results_json_path) and not force_rerun:
+        print(f"Found existing results.json at {results_json_path}")
+        print("Exiting...")
+        return
 
     if os.path.exists(base_dir):
         shutil.rmtree(base_dir)
@@ -165,7 +171,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1):
 
     print(results_dict)
 
-    with open(os.path.join(base_dir, "results.json"), "w") as f:
+    with open(results_json_path, "w") as f:
         json.dump(results_dict, f)
 
 
