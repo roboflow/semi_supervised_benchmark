@@ -63,6 +63,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         split="test",
     )
     fully_supervised_test_map = fully_supervised_test_metrics.box.map
+    fully_supervised_test_map_50 = fully_supervised_test_metrics.box.map50
 
     shutil.copytree(labeled_dataset.location, supervised_dataset_dir, dirs_exist_ok=True)
 
@@ -96,6 +97,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         split="test",
     )
     teacher_test_map = teacher_test_metrics.box.map
+    teacher_test_map_50 = teacher_test_metrics.box.map50
 
     f1_curve = model.trainer.validator.metrics.box.f1_curve
     f1_score_maximizing_confidence = f1_curve.mean(0).argmax() / f1_curve.shape[1]
@@ -160,11 +162,15 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         split="test",
     )
     student_test_map = student_test_metrics.box.map
+    student_test_map_50 = student_test_metrics.box.map50
 
     results_dict = {
         "fully_supervised_ap": fully_supervised_test_map,
         "teacher_ap": teacher_test_map,
         "student_ap": student_test_map,
+        "fully_supervised_ap_50": fully_supervised_test_map_50,
+        "teacher_ap_50": teacher_test_map_50,
+        "student_ap_50": student_test_map_50,
         "url": dataset_url,
         "label_percentage": label_percentage,
     }
