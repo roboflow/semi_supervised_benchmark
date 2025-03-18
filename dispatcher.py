@@ -19,7 +19,7 @@ def get_all_gpus():
     return gpu_ids
 
 
-def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False):
+def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False, model_name='yolov8n', skip_stac=False):
     """
     Runs the training script with the given dataset URL on the specified GPU.
     The GPU is set via the CUDA_VISIBLE_DEVICES environment variable.
@@ -36,13 +36,13 @@ def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun
     print(f"[GPU {gpu_id}] Running {script_path} with URL: {dataset_url}")
     if suppress_output:
         subprocess.run(
-            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun)],
+            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun), "--model_name", model_name, "--skip_stac", str(skip_stac)],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
     else:
-        subprocess.run(["python", script_path, dataset_url], env=env)
+        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac)], env=env)
 
 
 def collect_results_jsons(base_dir, output_file):
@@ -81,7 +81,7 @@ def collect_results_jsons(base_dir, output_file):
         print(f"Error writing to {output_file}: {e}")
 
 
-def main(script, url_file, suppress_output=False, output_file=None, force_rerun=False):
+def main(script, url_file, suppress_output=False, output_file=None, force_rerun=False, model_name='yolov8n', skip_stac=False):
     """
     Manages GPU training jobs.
     
@@ -91,6 +91,8 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
         suppress_output (bool): If True, suppress output from the training scripts.
         output_file (str): File path to save aggregated results.
         force_rerun (bool): If True, rerun the script even if results.json already exists.
+        model_name (str): Name of the model to use.
+        skip_stac (bool): If True, skip STAC training.
     """
     if suppress_output:
         print("Suppressing output")
@@ -130,7 +132,7 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
                 url = dataset_urls.pop(0)
                 new_proc = multiprocessing.Process(
                     target=run_job,
-                    args=(script, url, gpu, suppress_output, force_rerun)
+                    args=(script, url, gpu, suppress_output, force_rerun, model_name, skip_stac)
                 )
                 new_proc.start()
                 processes[gpu] = new_proc
