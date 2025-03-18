@@ -10,9 +10,9 @@ import fire
 
 def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False):
     train_params = dict(
-        epochs=300,
+        epochs=100,
         batch=16,
-    )
+    )  # standardized training params for rf100 benchmarking
 
     # example url:
     # dataset_url = "https://universe.roboflow.com/brad-dwyer/aquarium-combined/dataset/6"
