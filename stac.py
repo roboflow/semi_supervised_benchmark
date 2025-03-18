@@ -8,8 +8,7 @@ random.seed(37)
 import fire
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False):
-    model_name = 'yolov8n'
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False):
     train_params = dict(
         epochs=300,
         batch=16,
@@ -65,115 +64,122 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     fully_supervised_test_map = fully_supervised_test_metrics.box.map
     fully_supervised_test_map_50 = fully_supervised_test_metrics.box.map50
 
-    shutil.copytree(labeled_dataset.location, supervised_dataset_dir, dirs_exist_ok=True)
+    if not skip_stac:
+        shutil.copytree(labeled_dataset.location, supervised_dataset_dir, dirs_exist_ok=True)
 
-    labeled_dataset_yaml = os.path.join(supervised_dataset_dir, "data.yaml")
+        labeled_dataset_yaml = os.path.join(supervised_dataset_dir, "data.yaml")
 
-    # determine the images to keep from the labeled dataset
-    all_images = os.listdir(os.path.join(supervised_dataset_dir, "train", "images"))
-    random.shuffle(all_images)
-    images_to_move = all_images[int(len(all_images) * label_percentage):]
+        # determine the images to keep from the labeled dataset
+        all_images = os.listdir(os.path.join(supervised_dataset_dir, "train", "images"))
+        random.shuffle(all_images)
+        images_to_move = all_images[int(len(all_images) * label_percentage):]
 
-    # strip the images and labels from the labeled dataset and store images in unlabeled_subset_dir
-    for image in images_to_move:
-        shutil.move(os.path.join(supervised_dataset_dir, "train", "images", image), os.path.join(unlabeled_images_dir, image))
-        labels_file = os.path.join(supervised_dataset_dir, "train", "labels", image[:-4] + '.txt')
-        if os.path.exists(labels_file):
-            os.remove(labels_file)
+        # strip the images and labels from the labeled dataset and store images in unlabeled_subset_dir
+        for image in images_to_move:
+            shutil.move(os.path.join(supervised_dataset_dir, "train", "images", image), os.path.join(unlabeled_images_dir, image))
+            labels_file = os.path.join(supervised_dataset_dir, "train", "labels", image[:-4] + '.txt')
+            if os.path.exists(labels_file):
+                os.remove(labels_file)
 
-    print("Training teacher model...")
-    model = YOLO(f"{model_name}.pt")
+        print("Training teacher model...")
+        model = YOLO(f"{model_name}.pt")
 
-    # train the teacher model on the labeled dataset
-    model.train(
-        data=labeled_dataset_yaml,
-        project=experiment_name,
-        name="teacher",
-        exist_ok=True,
-        **train_params
-    )
+        # train the teacher model on the labeled dataset
+        model.train(
+            data=labeled_dataset_yaml,
+            project=experiment_name,
+            name="teacher",
+            exist_ok=True,
+            **train_params
+        )
 
-    teacher_test_metrics = model.val(
-        split="test",
-    )
-    teacher_test_map = teacher_test_metrics.box.map
-    teacher_test_map_50 = teacher_test_metrics.box.map50
+        teacher_test_metrics = model.val(
+            split="test",
+        )
+        teacher_test_map = teacher_test_metrics.box.map
+        teacher_test_map_50 = teacher_test_metrics.box.map50
 
-    f1_curve = model.trainer.validator.metrics.box.f1_curve
-    f1_score_maximizing_confidence = f1_curve.mean(0).argmax() / f1_curve.shape[1]
-    print(f"F1 score maximizing confidence: {f1_score_maximizing_confidence}")
+        f1_curve = model.trainer.validator.metrics.box.f1_curve
+        f1_score_maximizing_confidence = f1_curve.mean(0).argmax() / f1_curve.shape[1]
+        print(f"F1 score maximizing confidence: {f1_score_maximizing_confidence}")
 
-    print("Predicting unlabeled images...")
-    # make sure to clear existing predictions
-    if os.path.exists(os.path.join("stac", "teacher_predictions")):
-        shutil.rmtree(os.path.join("stac", "teacher_predictions"))
-    model.predict(unlabeled_images_dir, save=False, save_txt=True, name="teacher_predictions", exist_ok=True, conf=f1_score_maximizing_confidence)
+        print("Predicting unlabeled images...")
+        # make sure to clear existing predictions
+        if os.path.exists(os.path.join("stac", "teacher_predictions")):
+            shutil.rmtree(os.path.join("stac", "teacher_predictions"))
+        model.predict(unlabeled_images_dir, save=False, save_txt=True, name="teacher_predictions", exist_ok=True, conf=f1_score_maximizing_confidence)
 
 
-    # generate the semi-supervised dataset
+        # generate the semi-supervised dataset
 
-    def copy_files(src_dir, dest_dir):
-        os.makedirs(dest_dir, exist_ok=True)
-        for filename in os.listdir(src_dir):
-            shutil.copy2(os.path.join(src_dir, filename), dest_dir)
+        def copy_files(src_dir, dest_dir):
+            os.makedirs(dest_dir, exist_ok=True)
+            for filename in os.listdir(src_dir):
+                shutil.copy2(os.path.join(src_dir, filename), dest_dir)
 
-    print("Generating semi-supervised dataset...")
+        print("Generating semi-supervised dataset...")
 
-    # clear the semi-supervised dataset directory if it exists
-    if os.path.exists(semi_supervised_dataset_dir):
-        shutil.rmtree(semi_supervised_dataset_dir)
-        print(f"Cleared existing directory: {semi_supervised_dataset_dir}")
+        # clear the semi-supervised dataset directory if it exists
+        if os.path.exists(semi_supervised_dataset_dir):
+            shutil.rmtree(semi_supervised_dataset_dir)
+            print(f"Cleared existing directory: {semi_supervised_dataset_dir}")
 
-    # first copy the 'unlabeled' reference images and their predictions
-    copy_files(unlabeled_images_dir, os.path.join(semi_supervised_dataset_dir, "train", "images"))
-    copy_files(os.path.join(experiment_name, "teacher_predictions", "labels"), os.path.join(semi_supervised_dataset_dir, "train", "labels"))
+        # first copy the 'unlabeled' reference images and their predictions
+        copy_files(unlabeled_images_dir, os.path.join(semi_supervised_dataset_dir, "train", "images"))
+        copy_files(os.path.join(experiment_name, "teacher_predictions", "labels"), os.path.join(semi_supervised_dataset_dir, "train", "labels"))
 
-    # filter out all images that have no predictions
-    for image in os.listdir(os.path.join(semi_supervised_dataset_dir, "train", "images")):
-        if not os.path.exists(os.path.join(semi_supervised_dataset_dir, "train", "labels", image[:-4] + '.txt')):
-            os.remove(os.path.join(semi_supervised_dataset_dir, "train", "images", image))
+        # filter out all images that have no predictions
+        for image in os.listdir(os.path.join(semi_supervised_dataset_dir, "train", "images")):
+            if not os.path.exists(os.path.join(semi_supervised_dataset_dir, "train", "labels", image[:-4] + '.txt')):
+                os.remove(os.path.join(semi_supervised_dataset_dir, "train", "images", image))
 
-    # then copy the existing dataset structure
-    # note that this may overwrite some of the unlabeled images / predictions, but if that happens, the labels will be strictly better
-    copy_files(os.path.join(supervised_dataset_dir, "train", "images"), os.path.join(semi_supervised_dataset_dir, "train", "images"))
-    copy_files(os.path.join(supervised_dataset_dir, "train", "labels"), os.path.join(semi_supervised_dataset_dir, "train", "labels"))
+        # then copy the existing dataset structure
+        # note that this may overwrite some of the unlabeled images / predictions, but if that happens, the labels will be strictly better
+        copy_files(os.path.join(supervised_dataset_dir, "train", "images"), os.path.join(semi_supervised_dataset_dir, "train", "images"))
+        copy_files(os.path.join(supervised_dataset_dir, "train", "labels"), os.path.join(semi_supervised_dataset_dir, "train", "labels"))
 
-    copy_files(os.path.join(supervised_dataset_dir, "valid", "images"), os.path.join(semi_supervised_dataset_dir, "valid", "images"))
-    copy_files(os.path.join(supervised_dataset_dir, "valid", "labels"), os.path.join(semi_supervised_dataset_dir, "valid", "labels"))
+        copy_files(os.path.join(supervised_dataset_dir, "valid", "images"), os.path.join(semi_supervised_dataset_dir, "valid", "images"))
+        copy_files(os.path.join(supervised_dataset_dir, "valid", "labels"), os.path.join(semi_supervised_dataset_dir, "valid", "labels"))
 
-    copy_files(os.path.join(supervised_dataset_dir, "test", "images"), os.path.join(semi_supervised_dataset_dir, "test", "images"))
-    copy_files(os.path.join(supervised_dataset_dir, "test", "labels"), os.path.join(semi_supervised_dataset_dir, "test", "labels"))
+        copy_files(os.path.join(supervised_dataset_dir, "test", "images"), os.path.join(semi_supervised_dataset_dir, "test", "images"))
+        copy_files(os.path.join(supervised_dataset_dir, "test", "labels"), os.path.join(semi_supervised_dataset_dir, "test", "labels"))
 
-    shutil.copy2(labeled_dataset_yaml, os.path.join(semi_supervised_dataset_dir, "data.yaml"))
+        shutil.copy2(labeled_dataset_yaml, os.path.join(semi_supervised_dataset_dir, "data.yaml"))
 
-    print("Training student model...")
-    model = YOLO(f"{model_name}.pt")
+        print("Training student model...")
+        model = YOLO(f"{model_name}.pt")
 
-    # note that ultralytics train has lots of augmentations by default, so we don't need to actively add any to mimic STAC
-    model.train(
-        data=os.path.join(semi_supervised_dataset_dir, "data.yaml"),
-        project=experiment_name,
-        name="student",
-        exist_ok=True,
-        **train_params
-    )
+        # note that ultralytics train has lots of augmentations by default, so we don't need to actively add any to mimic STAC
+        model.train(
+            data=os.path.join(semi_supervised_dataset_dir, "data.yaml"),
+            project=experiment_name,
+            name="student",
+            exist_ok=True,
+            **train_params
+        )
 
-    student_test_metrics = model.val(
-        split="test",
-    )
-    student_test_map = student_test_metrics.box.map
-    student_test_map_50 = student_test_metrics.box.map50
+        student_test_metrics = model.val(
+            split="test",
+        )
+        student_test_map = student_test_metrics.box.map
+        student_test_map_50 = student_test_metrics.box.map50
 
-    results_dict = {
-        "fully_supervised_ap": fully_supervised_test_map,
-        "teacher_ap": teacher_test_map,
-        "student_ap": student_test_map,
-        "fully_supervised_ap_50": fully_supervised_test_map_50,
-        "teacher_ap_50": teacher_test_map_50,
-        "student_ap_50": student_test_map_50,
-        "url": dataset_url,
-        "label_percentage": label_percentage,
-    }
+        results_dict = {
+            "fully_supervised_ap": fully_supervised_test_map,
+            "teacher_ap": teacher_test_map,
+            "student_ap": student_test_map,
+            "fully_supervised_ap_50": fully_supervised_test_map_50,
+            "teacher_ap_50": teacher_test_map_50,
+            "student_ap_50": student_test_map_50,
+            "url": dataset_url,
+            "label_percentage": label_percentage,
+        }
+    else:
+        results_dict = {
+            "fully_supervised_ap": fully_supervised_test_map,
+            "fully_supervised_ap_50": fully_supervised_test_map_50,
+            "url": dataset_url,
+        }
 
     print(results_dict)
 

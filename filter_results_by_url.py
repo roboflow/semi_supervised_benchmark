@@ -1,7 +1,7 @@
 import json
 import fire
 
-def average_stats(json_path, urls_path):
+def average_stats(json_path, urls_path, model_name_filter=None):
     """
     Computes the average of statistics over all JSON entries whose 'url' is present in the URLs file.
     
@@ -27,7 +27,9 @@ def average_stats(json_path, urls_path):
     count = 0
     
     # Iterate over each record in the JSON
-    for record in data.values():
+    for key, record in data.items():
+        if model_name_filter is not None and model_name_filter not in key:
+            continue
         url = record.get("url")
         if url in url_set:
             total_fully_supervised_ap += record.get("fully_supervised_ap", 0.0)
