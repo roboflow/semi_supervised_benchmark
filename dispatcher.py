@@ -9,14 +9,27 @@ import json
 
 def get_all_gpus():
     """
-    Detects available GPU IDs using torch.cuda.
+    Detects available GPU IDs using the CUDA_VISIBLE_DEVICES environment variable if set,
+    otherwise falling back to torch.cuda.
     Returns a list of GPU IDs if available; otherwise, asserts failure.
     """
-    assert torch.cuda.is_available(), "No GPUs available"
-    count = torch.cuda.device_count()
-    gpu_ids = list(range(count))
-    print(f"Detected GPUs via torch: {gpu_ids}")
-    return gpu_ids
+    # Check if CUDA_VISIBLE_DEVICES is set
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible_devices:
+        # Parse the string into a list of integer device IDs.
+        try:
+            gpu_ids = [int(x.strip()) for x in visible_devices.split(',') if x.strip()]
+        except ValueError:
+            raise ValueError("CUDA_VISIBLE_DEVICES contains non-integer values.")
+        print(f"Detected GPUs via CUDA_VISIBLE_DEVICES: {gpu_ids}")
+        return gpu_ids
+    else:
+        # Fall back to torch.cuda if CUDA_VISIBLE_DEVICES is not set.
+        assert torch.cuda.is_available(), "No GPUs available"
+        count = torch.cuda.device_count()
+        gpu_ids = list(range(count))
+        print(f"Detected GPUs via torch: {gpu_ids}")
+        return gpu_ids
 
 
 def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False, model_name='yolov8n', skip_stac=False):
