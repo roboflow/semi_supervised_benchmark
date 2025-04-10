@@ -55,7 +55,7 @@ def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun
             stderr=subprocess.DEVNULL
         )
     else:
-        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac)], env=env)
+        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac), "--force_rerun", str(force_rerun)], env=env)
 
 
 def collect_results_jsons(base_dir, output_file):
