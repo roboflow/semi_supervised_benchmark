@@ -120,9 +120,9 @@ class Federatedv8DetectionLoss(v8DetectionLoss):
             reduction="none"
         )
 
-        # mask = torch.any(gt_classes > 0, dim=1, keepdim=True)
+        mask = torch.any(gt_classes > 0, dim=1, keepdim=True)
 
-        # cls_loss = cls_loss * mask
+        cls_loss = cls_loss * mask
 
         return cls_loss
 
