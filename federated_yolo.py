@@ -135,7 +135,7 @@ class FederatedDetectionModel(DetectionModel):
 
 class FederatedDetectionTrainer(DetectionTrainer):
     def get_model(self, cfg=None, weights=None, verbose=True):
-        model = FederatedDetectionModel(cfg, nc=self.data["nc"], ch=self.data["channels"], verbose=verbose)
+        model = FederatedDetectionModel(cfg, nc=self.data["nc"], ch=3, verbose=verbose)
         if weights:
             model.load(weights)
         return model
