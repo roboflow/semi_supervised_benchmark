@@ -1,6 +1,15 @@
 import json
 import fire
 
+
+def slow_get_category(dataset_mapping, key):
+    short_key = "-".join(key.split("-")[:-6])
+    for ds_key in dataset_mapping.keys():
+        if short_key in ds_key:
+            return dataset_mapping[ds_key]
+    return None
+
+
 def average_stats(json_path, urls_path, mapping_path, model_filter=""):
     """
     Computes the average statistics per dataset group (category) and overall across all JSON entries
@@ -46,7 +55,7 @@ def average_stats(json_path, urls_path, mapping_path, model_filter=""):
     # Iterate over each record in the results JSON
     for key, record in results_data.items():
         # If model_filter is provided, skip keys that do not contain the filter string.
-        if model_filter and model_filter not in key:
+        if model_filter and model_filter not in key or "fsod" not in key or "federated" not in key:
             continue
         
         # Check if the record's URL is in the provided URL list
@@ -54,12 +63,15 @@ def average_stats(json_path, urls_path, mapping_path, model_filter=""):
         if record_url.endswith("/"):
             record_url = record_url[:-1]
         if record_url not in url_set:
+            print(record_url)
             continue
+            
         
         # Determine the dataset name by finding a mapping key that the record key starts with.
         dataset_name = None
         for ds_key in dataset_mapping.keys():
-            if key.startswith(ds_key):
+            short_key = "-".join(key.split("-")[:-6])
+            if ds_key.startswith(short_key):
                 dataset_name = ds_key
                 break
         
@@ -69,6 +81,8 @@ def average_stats(json_path, urls_path, mapping_path, model_filter=""):
         
         # Get the category for this dataset name.
         category = dataset_mapping.get(dataset_name)
+        # category = slow_get_category(dataset_mapping, key)
+        # print(key, category)
         
         # Initialize accumulator for the category if it doesn't exist.
         if category not in category_stats:
