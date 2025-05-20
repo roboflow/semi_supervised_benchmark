@@ -150,7 +150,7 @@ class FederatedYOLO(YOLO):
         return task_map
 
 
-def run_federated_benchmark(dataset_url: str, force_rerun: bool=False, model_name: str='yolov8n', max_det: int=500):
+def run_federated_benchmark(dataset_url: str, force_rerun: bool=False, model_name: str='yolov8n', max_det: int=500, num_reps: int=1):
     train_params = dict(
         epochs=100,
         batch=16,
@@ -176,37 +176,61 @@ def run_federated_benchmark(dataset_url: str, force_rerun: bool=False, model_nam
         shutil.rmtree(base_dir)
     os.makedirs(base_dir, exist_ok=True)
 
+    results_per_rep = []
 
-    print("Running fully supervised baseline...")
-    model = FederatedYOLO(f"{model_name}.pt")
-    model.train(
-        data=fully_supervised_dataset_yaml,
-        project=experiment_name,
-        name="federated",
-        exist_ok=True,
-        **train_params
-    )
 
-    proper_val(model, split="test", max_det=max_det)
+    for rep in range(num_reps):
+        print("Running fully supervised baseline...")
+        model = FederatedYOLO(f"{model_name}.pt")
+        model.train(
+            data=fully_supervised_dataset_yaml,
+            project=experiment_name,
+            name="federated",
+            exist_ok=True,
+            seed=rep,
+            **train_params
+        )
 
-    coco_format_dataset = roboflow.download_dataset(dataset_url, "coco", location=labeled_dataset.location + "_coco")
-    coco_format_test_annotations = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
+        proper_val(model, split="test", max_det=max_det)
 
-    test_gt_annotations = COCO(coco_format_test_annotations)
-    fix_pred_annotation_image_ids(os.path.join(experiment_name, "federated", "predictions.json"), coco_format_test_annotations)
-    test_pred_annotations = test_gt_annotations.loadRes(os.path.join(experiment_name, "federated", "predictions.json"))
-    coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
-    coco_eval.params.maxDets = [1, 10, max_det]
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    summarize(coco_eval)
+        coco_format_dataset = roboflow.download_dataset(dataset_url, "coco", location=labeled_dataset.location + "_coco")
+        coco_format_test_annotations = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
 
-    fully_supervised_test_map = coco_eval.stats[0]
-    fully_supervised_test_map_50 = coco_eval.stats[1]
+        test_gt_annotations = COCO(coco_format_test_annotations)
+        fix_pred_annotation_image_ids(os.path.join(experiment_name, "federated", "predictions.json"), coco_format_test_annotations)
+        test_pred_annotations = test_gt_annotations.loadRes(os.path.join(experiment_name, "federated", "predictions.json"))
+        coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
+        coco_eval.params.maxDets = [1, 10, max_det]
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        summarize(coco_eval)
+
+        fully_supervised_test_map = coco_eval.stats[0]
+        fully_supervised_test_map_50 = coco_eval.stats[1]
+
+        results_per_rep.append({
+            "fully_supervised_ap": fully_supervised_test_map,
+            "fully_supervised_ap_50": fully_supervised_test_map_50,
+        })
+    
+    fully_supervised_ap_np = np.array([result["fully_supervised_ap"] for result in results_per_rep])
+    fully_supervised_ap_50_np = np.array([result["fully_supervised_ap_50"] for result in results_per_rep])
+
+    fully_supervised_ap_mean = np.mean(fully_supervised_ap_np)
+    fully_supervised_ap_50_mean = np.mean(fully_supervised_ap_50_np)
+
+    if num_reps > 1:
+        fully_supervised_ap_std = np.std(fully_supervised_ap_np)
+        fully_supervised_ap_50_std = np.std(fully_supervised_ap_50_np)
+    else:
+        fully_supervised_ap_std = 0
+        fully_supervised_ap_50_std = 0
 
     results_dict = {
-        "fully_supervised_ap": fully_supervised_test_map,
-        "fully_supervised_ap_50": fully_supervised_test_map_50,
+        "fully_supervised_ap": fully_supervised_ap_mean,
+        "fully_supervised_ap_50": fully_supervised_ap_50_mean,
+        "fully_supervised_ap_std": fully_supervised_ap_std,
+        "fully_supervised_ap_50_std": fully_supervised_ap_50_std,
         "url": dataset_url,
     }
     
