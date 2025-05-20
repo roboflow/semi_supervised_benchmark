@@ -193,6 +193,12 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     fully_supervised_test_map = coco_eval.stats[0]
     fully_supervised_test_map_50 = coco_eval.stats[1]
 
+    ultralytics_fully_supervised_test_metrics = model.val(
+        split="test",
+    )
+    ultralytics_fully_supervised_test_map = ultralytics_fully_supervised_test_metrics.box.map
+    ultralytics_fully_supervised_test_map_50 = ultralytics_fully_supervised_test_metrics.box.map50
+
     if not skip_stac:
         shutil.copytree(labeled_dataset.location, supervised_dataset_dir, dirs_exist_ok=True)
 
@@ -319,12 +325,16 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
             "student_ap_50": student_test_map_50,
             "url": dataset_url,
             "label_percentage": label_percentage,
+            "ultralytics_fully_supervised_ap": ultralytics_fully_supervised_test_map,
+            "ultralytics_fully_supervised_ap_50": ultralytics_fully_supervised_test_map_50,
         }
     else:
         results_dict = {
             "fully_supervised_ap": fully_supervised_test_map,
             "fully_supervised_ap_50": fully_supervised_test_map_50,
             "url": dataset_url,
+            "ultralytics_fully_supervised_ap": ultralytics_fully_supervised_test_map,
+            "ultralytics_fully_supervised_ap_50": ultralytics_fully_supervised_test_map_50,
         }
 
     print(results_dict)
