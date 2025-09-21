@@ -126,6 +126,43 @@ def summarize(self):
     self.stats = summarize()
 
 
+def generate_semi_supervised_split(images_dir: str, label_percentage: float):
+    all_images = os.listdir(images_dir)
+    all_images = [image for image in all_images if image.split(".")[-1].lower() in ["jpg", "jpeg", "png", "webp"]]
+    all_images = sorted(all_images)
+    random.seed(37)
+    random.shuffle(all_images)
+    supervised_images = all_images[:int(len(all_images) * label_percentage)]
+    unsupervised_images = all_images[int(len(all_images) * label_percentage):]
+    return supervised_images, unsupervised_images
+
+
+def fix_gt_annotation_ids(gt_annotations_path: str):
+    print(f"Fixing annotation ids in {gt_annotations_path}")
+    # pycocotools has a bug where annotation ids must be from 1, and gives wrong results if they are not
+    with open(gt_annotations_path, "r") as f:
+        gt_annotations = json.load(f)
+    
+    annotation_ids_shift = 1 - min(z["id"] for z in gt_annotations["annotations"])
+    for annotation in gt_annotations["annotations"]:
+        annotation["id"] += annotation_ids_shift
+
+    with open(gt_annotations_path, "w") as f:
+        json.dump(gt_annotations, f)
+
+
+def compute_pycocotools_metrics(gt_annotations_path: str, pred_annotations_path: str, max_det: int=500):
+    test_gt_annotations = COCO(gt_annotations_path)
+    fix_pred_annotation_image_ids(pred_annotations_path, gt_annotations_path)
+    test_pred_annotations = test_gt_annotations.loadRes(pred_annotations_path)
+    coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
+    coco_eval.params.maxDets = [1, 10, max_det]
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    summarize(coco_eval)
+    return coco_eval.stats
+
+
 def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500):
     train_params = dict(
         epochs=100,
@@ -179,19 +216,13 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     proper_val(model, split="test", max_det=max_det)
 
     coco_format_dataset = roboflow.download_dataset(dataset_url, "coco", location=labeled_dataset.location + "_coco")
-    coco_format_test_annotations = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
+    coco_format_test_annotations_path = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
+    fix_gt_annotation_ids(coco_format_test_annotations_path)
 
-    test_gt_annotations = COCO(coco_format_test_annotations)
-    fix_pred_annotation_image_ids(os.path.join(experiment_name, "supervised_reference", "predictions.json"), coco_format_test_annotations)
-    test_pred_annotations = test_gt_annotations.loadRes(os.path.join(experiment_name, "supervised_reference", "predictions.json"))
-    coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
-    coco_eval.params.maxDets = [1, 10, max_det]
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    summarize(coco_eval)
+    fully_supervised_test_metrics = compute_pycocotools_metrics(coco_format_test_annotations_path, os.path.join(experiment_name, "supervised_reference", "predictions.json"), max_det)
 
-    fully_supervised_test_map = coco_eval.stats[0]
-    fully_supervised_test_map_50 = coco_eval.stats[1]
+    fully_supervised_test_map = fully_supervised_test_metrics[0]
+    fully_supervised_test_map_50 = fully_supervised_test_metrics[1]
 
     ultralytics_fully_supervised_test_metrics = model.val(
         split="test",
@@ -205,9 +236,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         labeled_dataset_yaml = os.path.join(supervised_dataset_dir, "data.yaml")
 
         # determine the images to keep from the labeled dataset
-        all_images = os.listdir(os.path.join(supervised_dataset_dir, "train", "images"))
-        random.shuffle(all_images)
-        images_to_move = all_images[int(len(all_images) * label_percentage):]
+        _, images_to_move = generate_semi_supervised_split(os.path.join(supervised_dataset_dir, "train", "images"), label_percentage)
 
         # strip the images and labels from the labeled dataset and store images in unlabeled_subset_dir
         for image in images_to_move:
@@ -230,16 +259,10 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
         proper_val(model, split="test", max_det=max_det)
 
-        fix_pred_annotation_image_ids(os.path.join(experiment_name, "teacher", "predictions.json"), coco_format_test_annotations)
-        test_pred_annotations = test_gt_annotations.loadRes(os.path.join(experiment_name, "teacher", "predictions.json"))
-        coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
-        coco_eval.params.maxDets = [1, 10, max_det]
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        summarize(coco_eval)
+        teacher_test_metrics = compute_pycocotools_metrics(coco_format_test_annotations_path, os.path.join(experiment_name, "teacher", "predictions.json"), max_det)
 
-        teacher_test_map = coco_eval.stats[0]
-        teacher_test_map_50 = coco_eval.stats[1]
+        teacher_test_map = teacher_test_metrics[0]
+        teacher_test_map_50 = teacher_test_metrics[1]
 
         model.val(
             split="test",
@@ -305,16 +328,10 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
         proper_val(model, split="test", max_det=max_det)
 
-        fix_pred_annotation_image_ids(os.path.join(experiment_name, "student", "predictions.json"), coco_format_test_annotations)
-        test_pred_annotations = test_gt_annotations.loadRes(os.path.join(experiment_name, "student", "predictions.json"))
-        coco_eval = COCOeval(test_gt_annotations, test_pred_annotations, "bbox")
-        coco_eval.params.maxDets = [1, 10, max_det]
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        summarize(coco_eval)
+        student_test_metrics = compute_pycocotools_metrics(coco_format_test_annotations_path, os.path.join(experiment_name, "student", "predictions.json"), max_det)
 
-        student_test_map = coco_eval.stats[0]
-        student_test_map_50 = coco_eval.stats[1]
+        student_test_map = student_test_metrics[0]
+        student_test_map_50 = student_test_metrics[1]
 
         results_dict = {
             "fully_supervised_ap": fully_supervised_test_map,
