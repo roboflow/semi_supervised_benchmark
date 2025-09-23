@@ -1,3 +1,5 @@
+# some boilerplate code because ultralytics messes up the environment
+
 import torch
 assert torch.cuda.is_available()
 
@@ -6,6 +8,7 @@ os.environ["YOLO_SKIP_UPDATE"] = "1"
 
 from ultralytics import YOLO
 import roboflow
+import json
 
 from sab.models.utils import ArtifactBenchmarkRequest, run_benchmark_on_artifact
 from sab.models.benchmark_yolov8 import YOLOv8ONNXInference, YOLOv8TRTInference
@@ -44,8 +47,13 @@ def run_benchmark(dataset_name: str, dataset_base_dir: str, models_base_dir: str
     results = run_benchmark_on_artifact(benchmark_request, images_dir, annotations_path)
 
     print(results)
+
+    results_json_path = os.path.join(model_dir, "sab_results.json")
+
+    with open(results_json_path, "w") as f:
+        json.dump(results, f)
     
-    
+    print(f"Results saved to {results_json_path}")
 
 
 if __name__ == "__main__":
