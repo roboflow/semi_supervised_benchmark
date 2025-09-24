@@ -21,6 +21,8 @@ def gather_results(base_dir: str, output_file: str, filter_str: str|None=None):
     average_latency = sum(latencies) / len(latencies)
     print(average_latency)
 
+    print(f"evaluated {len(results)} datasets")
+
 
 if __name__ == "__main__":
     import fire
