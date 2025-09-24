@@ -21,6 +21,13 @@ def run_benchmark(dataset_name: str, dataset_base_dir: str, models_base_dir: str
         if model_dir.startswith(dataset_name) and model_name in model_dir:
             model_dir = os.path.join(models_base_dir, model_dir)
             break
+    
+    results_json_path = os.path.join(model_dir, "sab_results.json")
+
+    if os.path.exists(results_json_path):
+        print(f"Results already exist at {results_json_path}")
+        print("Exiting...")
+        return
 
     pt_location = os.path.join(model_dir, "supervised_reference", "weights", "best.pt")
 
@@ -47,8 +54,6 @@ def run_benchmark(dataset_name: str, dataset_base_dir: str, models_base_dir: str
     results = run_benchmark_on_artifact(benchmark_request, images_dir, annotations_path)
 
     print(results)
-
-    results_json_path = os.path.join(model_dir, "sab_results.json")
 
     with open(results_json_path, "w") as f:
         json.dump(results, f)
