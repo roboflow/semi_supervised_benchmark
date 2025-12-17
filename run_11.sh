@@ -1,5 +1,5 @@
 #!/bin/bash
-FAIL_LOG="11_errors.txtx"
+FAIL_LOG="11_errors.txt"
 > "$FAIL_LOG"
 
 run_and_log() {
