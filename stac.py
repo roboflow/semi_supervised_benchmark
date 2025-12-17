@@ -163,10 +163,10 @@ def compute_pycocotools_metrics(gt_annotations_path: str, pred_annotations_path:
     return coco_eval.stats
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500):
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500, batch: int=16):
     train_params = dict(
-        epochs=100,
-        batch=16,
+        epochs=300,
+        batch=batch,
     )  # standardized training params for rf100 benchmarking
 
     # example url:
