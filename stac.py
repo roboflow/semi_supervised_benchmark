@@ -176,7 +176,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     labeled_dataset = roboflow.download_dataset(dataset_url, "yolov8")
     fully_supervised_dataset_yaml = os.path.join(labeled_dataset.location, "data.yaml")
 
-    experiment_name = f"{labeled_dataset.name}v{labeled_dataset.version}-{model_name}-stac-semi-{label_percentage}"
+    experiment_name = f"{labeled_dataset.name}v{labeled_dataset.version}-{model_name}-stac-semi-{label_percentage}-batch{batch}"
     base_dir = os.path.join(os.path.dirname(__file__), experiment_name)
 
     results_json_path = os.path.join(base_dir, "results.json")
