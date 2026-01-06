@@ -8,9 +8,113 @@ random.seed(37)
 import fire
 import torch
 import numpy as np
+import subprocess
 
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
+# GCS bucket for storing experiment results
+GCS_BUCKET = "gs://rf-detr-rf100-vl/yolo-bs-experiment"
+
+# Required files to consider an experiment complete
+REQUIRED_FILES_SUPERVISED_ONLY = [
+    "results.json",
+    "supervised_reference/results.csv",
+    "supervised_reference/weights/best.pt",
+]
+
+REQUIRED_FILES_WITH_STAC = [
+    "results.json",
+    "supervised_reference/results.csv",
+    "supervised_reference/weights/best.pt",
+    "teacher/results.csv",
+    "teacher/weights/best.pt",
+    "student/results.csv",
+    "student/weights/best.pt",
+]
+
+
+def parse_experiment_name_from_url(dataset_url: str, model_name: str, label_percentage: float, batch: int) -> str:
+    """
+    Parse the experiment name from a Roboflow URL without downloading.
+
+    Args:
+        dataset_url: URL like 'https://universe.roboflow.com/rf100-vl/dataset-name/dataset/1/'
+        model_name: Model name like 'yolov8n'
+        label_percentage: Label percentage like 0.1
+        batch: Batch size
+
+    Returns:
+        Experiment name like 'dataset-namev1-yolov8n-stac-semi-0.1-batch16'
+
+    Raises:
+        ValueError: If the URL format is not recognized
+    """
+    # Remove trailing slash and parse URL
+    url = dataset_url.rstrip('/')
+    parts = url.split('/')
+
+    # URL format: .../workspace/dataset-name/dataset/version
+    # Find 'dataset' in the path and extract name and version
+    try:
+        dataset_idx = parts.index('dataset')
+        dataset_name = parts[dataset_idx - 1]
+        version = parts[dataset_idx + 1]
+        return f"{dataset_name}v{version}-{model_name}-stac-semi-{label_percentage}-batch{batch}"
+    except (ValueError, IndexError) as e:
+        raise ValueError(f"Could not parse dataset URL: {dataset_url}") from e
+
+
+def check_gcs_experiment_complete(experiment_name: str, skip_stac: bool = False) -> bool:
+    """
+    Check if an experiment already exists and is complete in GCS.
+
+    Args:
+        experiment_name: The experiment folder name (e.g., 'dataset-yolov8n-stac-semi-0.1-batch16')
+        skip_stac: If True, only check for supervised_reference files
+
+    Returns:
+        True if experiment is complete in GCS, False otherwise
+    """
+    gcs_path = f"{GCS_BUCKET}/{experiment_name}/"
+    required_files = REQUIRED_FILES_SUPERVISED_ONLY if skip_stac else REQUIRED_FILES_WITH_STAC
+
+    try:
+        # List all files in the GCS experiment folder
+        result = subprocess.run(
+            ["gsutil", "ls", "-r", gcs_path],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            # Folder doesn't exist or error
+            print(f"GCS check: Experiment folder not found at {gcs_path}")
+            return False
+
+        gcs_files = result.stdout.strip().split('\n')
+        gcs_files = [f.replace(gcs_path, '') for f in gcs_files if f.strip()]
+
+        # Check if all required files exist
+        missing_files = []
+        for required in required_files:
+            if not any(required in f for f in gcs_files):
+                missing_files.append(required)
+
+        if missing_files:
+            print(f"GCS check: Experiment incomplete. Missing: {missing_files}")
+            return False
+
+        print(f"GCS check: Experiment already complete at {gcs_path}")
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("GCS check: Timeout while checking GCS, will run experiment")
+        return False
+    except Exception as e:
+        print(f"GCS check: Error checking GCS ({e}), will run experiment")
+        return False
 
 
 def proper_val(
@@ -163,7 +267,7 @@ def compute_pycocotools_metrics(gt_annotations_path: str, pred_annotations_path:
     return coco_eval.stats
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500, batch: int=16):
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500, batch: int=16, check_gcs: bool=True):
     train_params = dict(
         epochs=300,
         batch=batch,
@@ -171,6 +275,14 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
     # example url:
     # dataset_url = "https://universe.roboflow.com/brad-dwyer/aquarium-combined/dataset/6"
+
+    # Check GCS for completed experiment BEFORE downloading dataset
+    if check_gcs and not force_rerun:
+        experiment_name_from_url = parse_experiment_name_from_url(dataset_url, model_name, label_percentage, batch)
+        if check_gcs_experiment_complete(experiment_name_from_url, skip_stac):
+            print(f"Experiment already complete in GCS: {experiment_name_from_url}")
+            print("Skipping... (use --force_rerun=True to override)")
+            return
 
     print("Downloading labeled dataset...")
     labeled_dataset = roboflow.download_dataset(dataset_url, "yolov8")
