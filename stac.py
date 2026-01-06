@@ -267,7 +267,7 @@ def compute_pycocotools_metrics(gt_annotations_path: str, pred_annotations_path:
     return coco_eval.stats
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500, batch: int=16, check_gcs: bool=True):
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500, batch: int=16, check_gcs: bool=True, num_reps: int=1):
     train_params = dict(
         epochs=300,
         batch=batch,
