@@ -292,10 +292,11 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     base_dir = os.path.join(os.path.dirname(__file__), experiment_name)
 
     results_json_path = os.path.join(base_dir, "results.json")
-    if os.path.exists(results_json_path) and not force_rerun:
-        print(f"Found existing results.json at {results_json_path}")
-        print("Exiting...")
-        return
+    # Local check disabled - rely on GCS caching instead
+    # if os.path.exists(results_json_path) and not force_rerun:
+    #     print(f"Found existing results.json at {results_json_path}")
+    #     print("Exiting...")
+    #     return
 
     if os.path.exists(base_dir):
         shutil.rmtree(base_dir)
