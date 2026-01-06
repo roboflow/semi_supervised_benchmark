@@ -201,7 +201,7 @@ def main():
             for batch in batches:
                 model_name = f"{model_prefix}{size}"
                 cmd = [
-                    'python', 'dispatcher.py', 'stac.py', 'url_list.txt',
+                    'python3', 'dispatcher.py', 'stac.py', 'url_list.txt',
                     f'--model_name={model_name}',
                     f'--skip_stac=True',
                     f'--batch={batch}'
