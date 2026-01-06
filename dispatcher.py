@@ -49,13 +49,13 @@ def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun
     print(f"[GPU {gpu_id}] Running {script_path} with URL: {dataset_url}")
     if suppress_output:
         subprocess.run(
-            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun), "--model_name", model_name, "--skip_stac", str(skip_stac), "--num_reps", str(num_reps), "--batch", str(batch)],
+            ["python3", script_path, dataset_url, "--force_rerun", str(force_rerun), "--model_name", model_name, "--skip_stac", str(skip_stac), "--num_reps", str(num_reps), "--batch", str(batch)],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
     else:
-        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac), "--force_rerun", str(force_rerun), "--num_reps", str(num_reps), "--batch", str(batch)], env=env)
+        subprocess.run(["python3", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac), "--force_rerun", str(force_rerun), "--num_reps", str(num_reps), "--batch", str(batch)], env=env)
 
 
 def collect_results_jsons(base_dir, output_file):
