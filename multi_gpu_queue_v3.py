@@ -78,46 +78,68 @@ def load_dataset_urls(url_file: str) -> List[str]:
     return urls
 
 
-def get_experiment_name(dataset_url: str, model_name: str, batch: int) -> str:
-    """Parse experiment folder name from URL (matches stac.py logic)."""
-    url = dataset_url.rstrip('/')
-    parts = url.split('/')
-    try:
-        dataset_idx = parts.index('dataset')
-        dataset_name = parts[dataset_idx - 1]
-        version = parts[dataset_idx + 1]
-        return f"{dataset_name}v{version}-{model_name}-stac-semi-0.1-batch{batch}"
-    except (ValueError, IndexError):
-        return None
-
-
 def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> List[Job]:
-    """Find all incomplete model/batch/dataset combinations."""
+    """Find all incomplete model/batch/dataset combinations by scanning existing folders."""
 
     urls = load_dataset_urls(url_file)
+    total_datasets = len(urls)
+
+    # Pattern to match experiment folders: {dataset}v{version}-{model}-stac-semi-{pct}-batch{N}
+    pattern = re.compile(rf'^(.+)-({model_prefix}[nsm])-stac-semi-[\d.]+-batch(\d+)$')
+
+    # Scan existing folders to find completed datasets per model/batch
+    # completed[(model, batch)] = set of dataset_name_with_version (e.g., "aquariumv1")
+    completed: Dict[Tuple[str, int], Set[str]] = defaultdict(set)
+
+    try:
+        entries = os.listdir(base_dir)
+    except FileNotFoundError:
+        entries = []
+
+    for entry in entries:
+        entry_path = os.path.join(base_dir, entry)
+        if not os.path.isdir(entry_path):
+            continue
+
+        match = pattern.match(entry)
+        if not match:
+            continue
+
+        dataset_with_version = match.group(1)  # e.g., "aquarium-combinedv1"
+        model = match.group(2)                  # e.g., "yolo11n"
+        batch = int(match.group(3))             # e.g., 4
+
+        results_path = os.path.join(entry_path, 'results.json')
+        if os.path.isfile(results_path):
+            completed[(model, batch)].add(dataset_with_version)
+
+    # Now find what's missing
+    # We need to map URLs to dataset names - but we can't do that without downloading
+    # Instead, count: if completed count < total_datasets, we need to run more
+    # But we still need URLs to pass to stac.py
+
     jobs = []
     sizes = ['n', 's', 'm']
 
     for size in sizes:
         model_name = f"{model_prefix}{size}"
-        vram = lambda b: VRAM_ESTIMATES.get((size, b), 40.0)
+        vram_fn = lambda b, s=size: VRAM_ESTIMATES.get((s, b), 40.0)
 
         for batch in BATCH_SIZES:
-            for url in urls:
-                exp_name = get_experiment_name(url, model_name, batch)
-                if exp_name is None:
-                    continue
+            done_count = len(completed.get((model_name, batch), set()))
+            remaining = total_datasets - done_count
 
-                results_path = os.path.join(base_dir, exp_name, 'results.json')
-
-                # If results.json doesn't exist, this dataset needs to run
-                if not os.path.isfile(results_path):
+            if remaining > 0:
+                # We don't know exactly which URLs are incomplete without downloading
+                # So we add ALL URLs for this model/batch combo
+                # stac.py will skip the ones that already have results.json
+                for url in urls:
                     jobs.append(Job(
                         model_name=model_name,
                         model_size=size,
                         batch_size=batch,
                         dataset_url=url,
-                        vram_gb=vram(batch)
+                        vram_gb=vram_fn(batch)
                     ))
 
     return jobs
@@ -306,15 +328,21 @@ def main():
         print("All jobs complete!")
         return
 
-    # Summarize by model/batch
-    summary: Dict[str, int] = defaultdict(int)
+    # Summarize by model/batch - count unique combos (jobs may have duplicates for same model/batch)
+    combos: Dict[str, int] = defaultdict(int)
+    seen_combos = set()
     for job in jobs:
         key = f"{job.model_name}-b{job.batch_size}"
-        summary[key] += 1
+        if key not in seen_combos:
+            seen_combos.add(key)
+        combos[key] += 1
 
-    print(f"\nFound {len(jobs)} incomplete dataset jobs:")
-    for key in sorted(summary.keys()):
-        print(f"  {key}: {summary[key]} datasets")
+    # Count actual incomplete (will be filtered by stac.py)
+    unique_combos = len(seen_combos)
+    print(f"\nFound {unique_combos} incomplete model/batch combinations:")
+    print(f"(Total {len(jobs)} jobs queued - stac.py will skip already completed)")
+    for key in sorted(combos.keys()):
+        print(f"  {key}: {combos[key]} URLs to check")
     print()
 
     if args.dry_run:
