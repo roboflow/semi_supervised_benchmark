@@ -78,8 +78,11 @@ def load_dataset_urls(url_file: str) -> List[str]:
     return urls
 
 
-def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> List[Job]:
-    """Find all incomplete model/batch/dataset combinations by scanning existing folders."""
+def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> Tuple[List[Job], Dict[str, Tuple[int, int]]]:
+    """
+    Find all incomplete model/batch/dataset combinations by scanning existing folders.
+    Returns (jobs, stats) where stats[model-batch] = (done_count, total_count)
+    """
 
     urls = load_dataset_urls(url_file)
     total_datasets = len(urls)
@@ -114,11 +117,8 @@ def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> Lis
             completed[(model, batch)].add(dataset_with_version)
 
     # Now find what's missing
-    # We need to map URLs to dataset names - but we can't do that without downloading
-    # Instead, count: if completed count < total_datasets, we need to run more
-    # But we still need URLs to pass to stac.py
-
     jobs = []
+    stats: Dict[str, Tuple[int, int]] = {}  # model-batch -> (done, total)
     sizes = ['n', 's', 'm']
 
     for size in sizes:
@@ -128,6 +128,8 @@ def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> Lis
         for batch in BATCH_SIZES:
             done_count = len(completed.get((model_name, batch), set()))
             remaining = total_datasets - done_count
+            key = f"{model_name}-b{batch}"
+            stats[key] = (done_count, total_datasets)
 
             if remaining > 0:
                 # We don't know exactly which URLs are incomplete without downloading
@@ -142,7 +144,7 @@ def find_incomplete_jobs(base_dir: str, model_prefix: str, url_file: str) -> Lis
                         vram_gb=vram_fn(batch)
                     ))
 
-    return jobs
+    return jobs, stats
 
 
 class SharedJobQueue:
@@ -322,27 +324,33 @@ def main():
 
     # Find all incomplete dataset jobs
     print("Scanning for incomplete jobs...")
-    jobs = find_incomplete_jobs(base_dir, args.model, args.url_file)
+    jobs, stats = find_incomplete_jobs(base_dir, args.model, args.url_file)
 
     if not jobs:
         print("All jobs complete!")
         return
 
-    # Summarize by model/batch - count unique combos (jobs may have duplicates for same model/batch)
-    combos: Dict[str, int] = defaultdict(int)
-    seen_combos = set()
-    for job in jobs:
-        key = f"{job.model_name}-b{job.batch_size}"
-        if key not in seen_combos:
-            seen_combos.add(key)
-        combos[key] += 1
+    # Calculate actual work vs skip counts
+    total_to_run = 0
+    total_to_skip = 0
+    incomplete_combos = []
 
-    # Count actual incomplete (will be filtered by stac.py)
-    unique_combos = len(seen_combos)
-    print(f"\nFound {unique_combos} incomplete model/batch combinations:")
-    print(f"(Total {len(jobs)} jobs queued - stac.py will skip already completed)")
-    for key in sorted(combos.keys()):
-        print(f"  {key}: {combos[key]} URLs to check")
+    for key, (done, total) in sorted(stats.items()):
+        remaining = total - done
+        if remaining > 0:
+            incomplete_combos.append((key, done, remaining, total))
+            total_to_run += remaining
+            total_to_skip += done
+
+    print(f"\nFound {len(incomplete_combos)} incomplete model/batch combinations:")
+    print(f"  Actual datasets to train: {total_to_run}")
+    print(f"  Will be skipped (already done): {total_to_skip}")
+    print(f"  Total jobs queued: {len(jobs)}")
+    print()
+    print(f"{'Combo':<20} {'Done':>6} {'Todo':>6} {'Total':>6}")
+    print("-" * 42)
+    for key, done, remaining, total in incomplete_combos:
+        print(f"  {key:<18} {done:>6} {remaining:>6} {total:>6}")
     print()
 
     if args.dry_run:
