@@ -2,8 +2,7 @@
 """
 Multi-GPU job queue with:
 - Work-stealing: idle GPUs grab jobs from shared queue
-- Smart stacking: bs 1, 2, 4 jobs can stack 4 at a time per GPU
-- VRAM-aware packing for larger batch sizes
+- Pure VRAM-based packing: jobs stack if they fit
 """
 
 import subprocess
@@ -30,10 +29,6 @@ VRAM_ESTIMATES = {
 EXPECTED_DATASETS = 100
 BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128]
 
-# Batch sizes that can be stacked 4 at a time
-STACKABLE_BATCH_SIZES = {1, 2, 4}
-MAX_STACK = 4
-
 
 @dataclass
 class Job:
@@ -45,9 +40,6 @@ class Job:
 
     def __str__(self):
         return f"{self.model_name}-b{self.batch_size} ({self.datasets_remaining} left, {self.vram_gb}GB)"
-
-    def is_stackable(self) -> bool:
-        return self.batch_size in STACKABLE_BATCH_SIZES
 
 
 def get_available_gpus() -> List[int]:
@@ -130,24 +122,12 @@ class SharedJobQueue:
         self.completed = 0
         self.failed = 0
 
-    def get_job(self, available_vram: float, current_stackable_count: int) -> Optional[Job]:
-        """
-        Get a job that fits constraints.
-        - For stackable jobs (bs 1,2,4): only allow if current_stackable_count < MAX_STACK
-        - For non-stackable: check VRAM
-        """
+    def get_job(self, available_vram: float) -> Optional[Job]:
+        """Get a job that fits in available VRAM."""
         with self.lock:
-            # First try to get a stackable job if we have room
-            if current_stackable_count < MAX_STACK:
-                for i, job in enumerate(self.pending):
-                    if job.is_stackable():
-                        return self.pending.pop(i)
-
-            # Then try non-stackable jobs that fit VRAM
             for i, job in enumerate(self.pending):
-                if not job.is_stackable() and job.vram_gb <= available_vram:
+                if job.vram_gb <= available_vram:
                     return self.pending.pop(i)
-
             return None
 
     def mark_completed(self):
@@ -172,7 +152,7 @@ class SharedJobQueue:
 
 
 class GPUWorker(threading.Thread):
-    """Worker that processes jobs on a GPU with work-stealing and stacking."""
+    """Worker that processes jobs on a GPU with work-stealing and VRAM packing."""
 
     def __init__(self, gpu_id: int, job_queue: SharedJobQueue, max_vram: float, log_file: str):
         super().__init__()
@@ -184,7 +164,6 @@ class GPUWorker(threading.Thread):
 
         # Tracking
         self.current_vram = 0.0
-        self.current_stackable_count = 0
         self.current_jobs: List[Job] = []
         self.local_completed = 0
         self.local_failed = 0
@@ -234,16 +213,13 @@ class GPUWorker(threading.Thread):
             with self.lock:
                 self.local_failed += 1
 
-        # Release resources
+        # Release VRAM
         with self.lock:
-            if job.is_stackable():
-                self.current_stackable_count -= 1
-            else:
-                self.current_vram -= job.vram_gb
+            self.current_vram -= job.vram_gb
             self.current_jobs = [j for j in self.current_jobs if j != job]
 
     def run(self):
-        """Main loop: grab jobs from shared queue, respecting stacking/VRAM limits."""
+        """Main loop: grab jobs from shared queue if VRAM allows."""
         running_threads: List[Tuple[Job, threading.Thread]] = []
 
         while self.running:
@@ -256,21 +232,17 @@ class GPUWorker(threading.Thread):
                     thread.join()
             running_threads = still_running
 
-            # Get current state
+            # Get available VRAM
             with self.lock:
                 available_vram = self.max_vram - self.current_vram
-                stackable_count = self.current_stackable_count
 
-            # Try to get a job
-            job = self.job_queue.get_job(available_vram, stackable_count)
+            # Try to get a job that fits
+            job = self.job_queue.get_job(available_vram)
 
             if job:
-                # Reserve resources
+                # Reserve VRAM
                 with self.lock:
-                    if job.is_stackable():
-                        self.current_stackable_count += 1
-                    else:
-                        self.current_vram += job.vram_gb
+                    self.current_vram += job.vram_gb
                     self.current_jobs.append(job)
 
                 # Start job thread
@@ -295,11 +267,11 @@ class GPUWorker(threading.Thread):
     def get_status(self) -> str:
         with self.lock:
             jobs_str = ", ".join(f"{j.model_name}-b{j.batch_size}" for j in self.current_jobs) or "idle"
-            return f"stack={self.current_stackable_count}/{MAX_STACK}, vram={self.current_vram:.0f}/{self.max_vram:.0f}GB, [{jobs_str}]"
+            return f"vram={self.current_vram:.1f}/{self.max_vram:.0f}GB, [{jobs_str}]"
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Multi-GPU queue with work-stealing and stacking')
+    parser = argparse.ArgumentParser(description='Multi-GPU queue with work-stealing')
     parser.add_argument('--model', type=str, choices=['yolov8', 'yolo11'], required=True)
     parser.add_argument('--max-vram', type=float, default=75.0, help='Max VRAM per GPU (default: 75)')
     parser.add_argument('--base-dir', type=str, default=None)
@@ -311,12 +283,11 @@ def main():
     gpus = get_available_gpus()
 
     print("=" * 70)
-    print("Multi-GPU Queue v2 (work-stealing + stacking)")
+    print("Multi-GPU Queue v2 (work-stealing + VRAM packing)")
     print("=" * 70)
     print(f"Model: {args.model}")
     print(f"GPUs: {gpus}")
     print(f"Max VRAM/GPU: {args.max_vram}GB")
-    print(f"Stackable batches (1,2,4): up to {MAX_STACK} per GPU")
     print()
 
     # Find incomplete jobs
@@ -326,18 +297,9 @@ def main():
         print("All jobs complete!")
         return
 
-    # Separate stackable vs non-stackable for display
-    stackable = [j for j in jobs if j.is_stackable()]
-    non_stackable = [j for j in jobs if not j.is_stackable()]
-
     print(f"Found {len(jobs)} incomplete jobs:")
-    print(f"  Stackable (bs 1,2,4): {len(stackable)}")
-    print(f"  VRAM-based (bs 8+):   {len(non_stackable)}")
-    print()
-
     for job in sorted(jobs, key=lambda j: (-j.datasets_remaining, j.batch_size)):
-        tag = "[STACK]" if job.is_stackable() else f"[{job.vram_gb}GB]"
-        print(f"  {tag} {job}")
+        print(f"  [{job.vram_gb:.1f}GB] {job}")
     print()
 
     total_datasets = sum(j.datasets_remaining for j in jobs)
