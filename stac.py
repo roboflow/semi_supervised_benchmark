@@ -277,12 +277,12 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     # dataset_url = "https://universe.roboflow.com/brad-dwyer/aquarium-combined/dataset/6"
 
     # Check GCS for completed experiment BEFORE downloading dataset
-    if check_gcs and not force_rerun:
-        experiment_name_from_url = parse_experiment_name_from_url(dataset_url, model_name, label_percentage, batch)
-        if check_gcs_experiment_complete(experiment_name_from_url, skip_stac):
-            print(f"Experiment already complete in GCS: {experiment_name_from_url}")
-            print("Skipping... (use --force_rerun=True to override)")
-            return
+    #if check_gcs and not force_rerun:
+    #    experiment_name_from_url = parse_experiment_name_from_url(dataset_url, model_name, label_percentage, batch)
+    #    if check_gcs_experiment_complete(experiment_name_from_url, skip_stac):
+    #        print(f"Experiment already complete in GCS: {experiment_name_from_url}")
+    #        print("Skipping... (use --force_rerun=True to override)")
+    #        return
 
     print("Downloading labeled dataset...")
     labeled_dataset = roboflow.download_dataset(dataset_url, "yolov8")
@@ -293,10 +293,10 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
     results_json_path = os.path.join(base_dir, "results.json")
     # Local check disabled - rely on GCS caching instead
-    # if os.path.exists(results_json_path) and not force_rerun:
-    #     print(f"Found existing results.json at {results_json_path}")
-    #     print("Exiting...")
-    #     return
+    if os.path.exists(results_json_path) and not force_rerun:
+        print(f"Found existing results.json at {results_json_path}")
+        print("Exiting...")
+        return
 
     if os.path.exists(base_dir):
         shutil.rmtree(base_dir)
