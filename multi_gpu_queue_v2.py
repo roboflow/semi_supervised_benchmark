@@ -194,7 +194,8 @@ class GPUWorker(threading.Thread):
         self.log(f"START: {job}")
 
         try:
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            # Don't capture output - let it stream to console for debugging
+            result = subprocess.run(cmd, env=env)
 
             if result.returncode == 0:
                 self.log(f"DONE: {job}")
@@ -202,7 +203,7 @@ class GPUWorker(threading.Thread):
                 with self.lock:
                     self.local_completed += 1
             else:
-                self.log(f"FAIL: {job} - {result.stderr[:300] if result.stderr else 'No stderr'}")
+                self.log(f"FAIL: {job} - returncode={result.returncode}")
                 self.job_queue.mark_failed()
                 with self.lock:
                     self.local_failed += 1
