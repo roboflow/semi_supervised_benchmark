@@ -32,7 +32,7 @@ def get_all_gpus():
         return gpu_ids
 
 
-def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False, model_name='yolov8n', skip_stac=False):
+def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun=False, model_name='yolov8n', skip_stac=False, num_reps=1):
     """
     Runs the training script with the given dataset URL on the specified GPU.
     The GPU is set via the CUDA_VISIBLE_DEVICES environment variable.
@@ -49,13 +49,13 @@ def run_job(script_path, dataset_url, gpu_id, suppress_output=False, force_rerun
     print(f"[GPU {gpu_id}] Running {script_path} with URL: {dataset_url}")
     if suppress_output:
         subprocess.run(
-            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun), "--model_name", model_name, "--skip_stac", str(skip_stac)],
+            ["python", script_path, dataset_url, "--force_rerun", str(force_rerun), "--model_name", model_name, "--skip_stac", str(skip_stac), "--num_reps", str(num_reps)],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
     else:
-        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac), "--force_rerun", str(force_rerun)], env=env)
+        subprocess.run(["python", script_path, dataset_url, "--model_name", model_name, "--skip_stac", str(skip_stac), "--force_rerun", str(force_rerun), "--num_reps", str(num_reps)], env=env)
 
 
 def collect_results_jsons(base_dir, output_file):
@@ -94,10 +94,10 @@ def collect_results_jsons(base_dir, output_file):
         print(f"Error writing to {output_file}: {e}")
 
 
-def main(script, url_file, suppress_output=False, output_file=None, force_rerun=False, model_name='yolov8n', skip_stac=False):
+def main(script, url_file, suppress_output=False, output_file=None, force_rerun=False, model_name='yolov8n', skip_stac=False, num_reps=1, datasets='all'):
     """
     Manages GPU training jobs.
-    
+
     Args:
         script (str): Path to the training script to run.
         url_file (str): File path containing dataset URLs (one per line).
@@ -106,6 +106,8 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
         force_rerun (bool): If True, rerun the script even if results.json already exists.
         model_name (str): Name of the model to use.
         skip_stac (bool): If True, skip STAC training.
+        num_reps (int): Number of repetitions to run.
+        datasets (str): Filter datasets - 'all', 'even' (indices 0,2,4...), or 'odd' (indices 1,3,5...).
     """
     if suppress_output:
         print("Suppressing output")
@@ -127,7 +129,16 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
     with open(url_file, "r") as f:
         dataset_urls = [line.strip() for line in f if line.strip()]
         dataset_urls = [url[:-1] if url.endswith('/') else url for url in dataset_urls]
-    
+
+    dataset_urls = dataset_urls[:51]
+
+    # Filter by even/odd indices if requested
+    if datasets == 'even':
+        dataset_urls = [url for i, url in enumerate(dataset_urls) if i % 2 == 0]
+        print(f"Filtering to even indices: {len(dataset_urls)} datasets")
+    elif datasets == 'odd':
+        dataset_urls = [url for i, url in enumerate(dataset_urls) if i % 2 == 1]
+        print(f"Filtering to odd indices: {len(dataset_urls)} datasets")
     # Dictionary to track active processes per GPU.
     processes = {gpu: None for gpu in gpu_ids}
     
@@ -145,7 +156,7 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
                 url = dataset_urls.pop(0)
                 new_proc = multiprocessing.Process(
                     target=run_job,
-                    args=(script, url, gpu, suppress_output, force_rerun, model_name, skip_stac)
+                    args=(script, url, gpu, suppress_output, force_rerun, model_name, skip_stac, num_reps)
                 )
                 new_proc.start()
                 processes[gpu] = new_proc

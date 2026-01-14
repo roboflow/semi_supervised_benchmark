@@ -1,4 +1,4 @@
-ultralytics==8.3.89
+ultralytics==8.4.0
 pycocotools==2.0.8
 fire==0.7.1
 numpy<2

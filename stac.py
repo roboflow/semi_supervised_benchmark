@@ -7,6 +7,7 @@ import random
 random.seed(37)
 import fire
 import torch
+import subprocess
 import numpy as np
 
 from pycocotools.coco import COCO
@@ -163,7 +164,7 @@ def compute_pycocotools_metrics(gt_annotations_path: str, pred_annotations_path:
     return coco_eval.stats
 
 
-def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolov8n', skip_stac: bool=False, max_det: int=500):
+def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bool=False, model_name: str='yolo26n', skip_stac: bool=False, max_det: int=500):
     train_params = dict(
         epochs=100,
         batch=16,
@@ -358,6 +359,12 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
     with open(results_json_path, "w") as f:
         json.dump(results_dict, f)
+
+    # Upload results to GCS
+    model_size = model_name[-1]  # e.g., 'n' from 'yolo26n'
+    gcs_path = f"gs://rf-detr-rf100-vl/yolo26/{model_size}"
+    print(f"Uploading results to {gcs_path}...")
+    subprocess.run(["gsutil", "-m", "rsync", "-r", base_dir, gcs_path], check=True)
 
 
 if __name__ == "__main__":
