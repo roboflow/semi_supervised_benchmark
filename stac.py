@@ -226,21 +226,21 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         **train_params
     )
 
-    proper_val(model, split="test", max_det=max_det)
+    # proper_val(model, split="test", max_det=max_det)
 
-    coco_format_test_annotations_path = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
-    fix_gt_annotation_ids(coco_format_test_annotations_path)
+    # coco_format_test_annotations_path = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
+    # fix_gt_annotation_ids(coco_format_test_annotations_path)
 
-    fully_supervised_test_metrics = compute_pycocotools_metrics(coco_format_test_annotations_path, os.path.join(experiment_name, "supervised_reference", "predictions.json"), max_det)
+    # fully_supervised_test_metrics = compute_pycocotools_metrics(coco_format_test_annotations_path, os.path.join(experiment_name, "supervised_reference", "predictions.json"), max_det)
 
-    fully_supervised_test_map = fully_supervised_test_metrics[0]
-    fully_supervised_test_map_50 = fully_supervised_test_metrics[1]
+    # fully_supervised_test_map = fully_supervised_test_metrics[0]
+    # fully_supervised_test_map_50 = fully_supervised_test_metrics[1]
 
-    ultralytics_fully_supervised_test_metrics = model.val(
-        split="test",
-    )
-    ultralytics_fully_supervised_test_map = ultralytics_fully_supervised_test_metrics.box.map
-    ultralytics_fully_supervised_test_map_50 = ultralytics_fully_supervised_test_metrics.box.map50
+    # ultralytics_fully_supervised_test_metrics = model.val(
+    #     split="test",
+    # )
+    # ultralytics_fully_supervised_test_map = ultralytics_fully_supervised_test_metrics.box.map
+    # ultralytics_fully_supervised_test_map_50 = ultralytics_fully_supervised_test_metrics.box.map50
 
     if not skip_stac:
         shutil.copytree(labeled_dataset.location, supervised_dataset_dir, dirs_exist_ok=True)
@@ -359,11 +359,11 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
         }
     else:
         results_dict = {
-            "fully_supervised_ap": fully_supervised_test_map,
-            "fully_supervised_ap_50": fully_supervised_test_map_50,
+            # "fully_supervised_ap": fully_supervised_test_map,
+            # "fully_supervised_ap_50": fully_supervised_test_map_50,
             "url": dataset_url,
-            "ultralytics_fully_supervised_ap": ultralytics_fully_supervised_test_map,
-            "ultralytics_fully_supervised_ap_50": ultralytics_fully_supervised_test_map_50,
+            # "ultralytics_fully_supervised_ap": ultralytics_fully_supervised_test_map,
+            # "ultralytics_fully_supervised_ap_50": ultralytics_fully_supervised_test_map_50,
         }
 
     print(results_dict)
@@ -373,7 +373,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
     # Upload results to GCS
     model_size = model_name[-1]  # e.g., 'n' from 'yolo26n'
-    gcs_path = f"gs://rf-detr-rf100-vl/yolo26/{model_size}"
+    gcs_path = f"gs://rf-detr-rf100-vl/yolo26/{model_size}/{os.path.basename(base_dir)}"
     print(f"Uploading results to {gcs_path}...")
     subprocess.run(["gsutil", "-m", "rsync", "-r", base_dir, gcs_path], check=True)
 
