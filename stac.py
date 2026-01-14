@@ -9,6 +9,8 @@ import fire
 import torch
 import subprocess
 import numpy as np
+import hashlib
+import filelock
 
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -173,8 +175,18 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     # example url:
     # dataset_url = "https://universe.roboflow.com/brad-dwyer/aquarium-combined/dataset/6"
 
-    print("Downloading labeled dataset...")
-    labeled_dataset = roboflow.download_dataset(dataset_url, "yolov8")
+    # Use file lock to prevent race conditions when multiple processes download the same dataset
+    lock_hash = hashlib.md5(dataset_url.encode()).hexdigest()[:16]
+    lock_path = f"/tmp/roboflow_download_{lock_hash}.lock"
+    lock = filelock.FileLock(lock_path, timeout=3600)
+
+    print(f"Acquiring download lock for {dataset_url}...")
+    with lock:
+        print("Downloading labeled dataset...")
+        labeled_dataset = roboflow.download_dataset(dataset_url, "yolov8")
+        coco_format_dataset = roboflow.download_dataset(dataset_url, "coco", location=labeled_dataset.location + "_coco")
+    print("Download lock released.")
+
     fully_supervised_dataset_yaml = os.path.join(labeled_dataset.location, "data.yaml")
 
     experiment_name = f"{labeled_dataset.name}v{labeled_dataset.version}-{model_name}-stac-semi-{label_percentage}"
@@ -216,7 +228,6 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
 
     proper_val(model, split="test", max_det=max_det)
 
-    coco_format_dataset = roboflow.download_dataset(dataset_url, "coco", location=labeled_dataset.location + "_coco")
     coco_format_test_annotations_path = os.path.join(coco_format_dataset.location, "test", "_annotations.coco.json")
     fix_gt_annotation_ids(coco_format_test_annotations_path)
 
