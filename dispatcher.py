@@ -129,7 +129,7 @@ def main(script, url_file, suppress_output=False, output_file=None, force_rerun=
         dataset_urls = [line.strip() for line in f if line.strip()]
         dataset_urls = [url[:-1] if url.endswith('/') else url for url in dataset_urls]
 
-    dataset_urls = dataset_urls[:51]
+    dataset_urls = dataset_urls
 
     # Filter by even/odd indices if requested
     if datasets == 'even':
