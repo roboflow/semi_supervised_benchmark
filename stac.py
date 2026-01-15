@@ -192,6 +192,15 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     experiment_name = f"{labeled_dataset.name}v{labeled_dataset.version}-{model_name}-stac-semi-{label_percentage}"
     base_dir = os.path.join(os.path.dirname(__file__), experiment_name)
 
+    # Check if already uploaded to GCS
+    model_size = model_name[-1]  # e.g., 'n' from 'yolo26n'
+    gcs_path = f"gs://rf-detr-rf100-vl/yolo26/{model_size}/{os.path.basename(base_dir)}"
+    gcs_check = subprocess.run(["gsutil", "ls", gcs_path], capture_output=True)
+    if gcs_check.returncode == 0 and not force_rerun:
+        print(f"GCS folder already exists: {gcs_path}")
+        print("Skipping...")
+        return
+
     results_json_path = os.path.join(base_dir, "results.json")
     if os.path.exists(results_json_path) and not force_rerun:
         print(f"Found existing results.json at {results_json_path}")
@@ -371,9 +380,7 @@ def run_benchmark(dataset_url: str, label_percentage: float=0.1, force_rerun: bo
     with open(results_json_path, "w") as f:
         json.dump(results_dict, f)
 
-    # Upload results to GCS
-    model_size = model_name[-1]  # e.g., 'n' from 'yolo26n'
-    gcs_path = f"gs://rf-detr-rf100-vl/yolo26/{model_size}/{os.path.basename(base_dir)}"
+    # Upload results to GCS (gcs_path defined at top of function)
     print(f"Uploading results to {gcs_path}...")
     subprocess.run(["gsutil", "-m", "rsync", "-r", base_dir, gcs_path], check=True)
 
